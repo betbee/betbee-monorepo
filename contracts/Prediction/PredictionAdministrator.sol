@@ -13,9 +13,16 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
 
     address private admin;
     uint256 public treasuryFee;
-    uint256 public constant MAX_TREASURY_FEE = 500; // 5%
+    uint256 public constant MAX_TREASURY_FEE = 3; // 3%
     uint256 public minBetAmount; // minimum betting amount (denominated in wei)
     uint256 public treasuryAmount; // funds in treasury collected from fee
+    uint256 public claimableTreasuryPercent = 80; //80%
+
+    event NewMinBetAmount(uint256 minBetAmount);
+    event NewTreasuryFee(uint256 treasuryFee);
+    event NewAdmin(address indexed admin);
+    event NewClaimableTreasuryPercent(uint256 claimableTreasuryPercent);
+    event TreasuryClaim(address indexed admin, uint256 amount);
 
     constructor(address _adminAddress, uint256 _minBetAmount, uint256 _treasuryFee) {
         require(_minBetAmount > 0, "Invalid Min bet amount");
@@ -23,7 +30,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
         require(_adminAddress != address(0), "Invalid admin address");
         admin = _adminAddress;
         minBetAmount = _minBetAmount;
-        _treasuryFee = _treasuryFee;
+        treasuryFee = _treasuryFee;
     }
 
     modifier onlyAdmin() {
@@ -73,6 +80,8 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     function setMinBetAmount(uint256 _minBetAmount) external whenPaused onlyAdmin {
         require(_minBetAmount != 0, "Must be superior to 0");
         minBetAmount = _minBetAmount;
+
+        emit NewMinBetAmount(_minBetAmount);
     }
 
     /**
@@ -83,6 +92,8 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     function setTreasuryFee(uint256 _treasuryFee) external whenPaused onlyAdmin {
         require(_treasuryFee < MAX_TREASURY_FEE, "Treasury fee is too high");
         treasuryFee = _treasuryFee;
+
+        emit NewTreasuryFee(_treasuryFee);
     }
 
     /**
@@ -93,25 +104,33 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     function setAdmin(address _admin) external onlyOwner {
         require(_admin != address(0), "Cannot be zero address");
         admin = _admin;
+
+        emit NewAdmin(_admin);
     }
 
     /**
-     * @notice Transfer BNB in a safe way
-     * @param value: BNB amount to transfer (in wei)
+    * @notice Set Claimabble Treasury Percent
+    * @dev callable by Admin
+    * @param _claimableTreasuryPercent: claimable percent
      */
-    function _safeTransferBNB(address to, uint256 value) internal {
-        (bool success, ) = to.call{value: value}("");
-        require(success, "TransferHelper: BNB_TRANSFER_FAILED");
+    function setClaimableTreasuryPercent(uint256 _claimableTreasuryPercent)  external onlyAdmin {
+        require(_claimableTreasuryPercent > 0, "Amount cannot be zero or less");
+        claimableTreasuryPercent = _claimableTreasuryPercent;
+
+        emit NewClaimableTreasuryPercent(claimableTreasuryPercent);
     }
 
     /**
-     * @notice Claim treasury fund - collected as fee
+     * @notice Claim 80% of treasury fund - collected as fee
      * @dev Callable by admin
      */
     function claimTreasury() external nonReentrant onlyAdmin notContract {
-        uint256 currentTreasuryAmount = treasuryAmount;
-        treasuryAmount = 0;
-        _safeTransferBNB(admin, currentTreasuryAmount);
+        uint256 claimableTreasuryAmount = ((treasuryAmount * claimableTreasuryPercent) / 100);
+        treasuryAmount -= claimableTreasuryAmount;
+        (bool success, ) = admin.call{value: claimableTreasuryAmount}("");
+        require(success, "TransferHelper: TRANSFER_FAILED");
+
+        emit TreasuryClaim(admin, claimableTreasuryAmount);
     }
 
     /**
