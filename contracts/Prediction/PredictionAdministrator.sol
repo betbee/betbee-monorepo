@@ -11,7 +11,8 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
  */
 contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
 
-    address private admin;
+    address public admin;
+    address public operator;
     uint256 public treasuryFee;
     uint256 public constant MAX_TREASURY_FEE = 3; // 3%
     uint256 public minBetAmount; // minimum betting amount (denominated in wei)
@@ -21,6 +22,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     event NewMinBetAmount(uint256 minBetAmount);
     event NewTreasuryFee(uint256 treasuryFee);
     event NewAdmin(address indexed admin);
+    event NewOperator(address indexed operator);
     event NewClaimableTreasuryPercent(uint256 claimableTreasuryPercent);
     event TreasuryClaim(address indexed admin, uint256 amount);
 
@@ -29,12 +31,18 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
         require(_treasuryFee < MAX_TREASURY_FEE, "Treasury fee is too high");
         require(_adminAddress != address(0), "Invalid admin address");
         admin = _adminAddress;
+        operator = _adminAddress;
         minBetAmount = _minBetAmount;
         treasuryFee = _treasuryFee;
     }
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
+        _;
+    }
+
+    modifier onlyOperator() {
+        require(msg.sender == operator, "Not operator");
         _;
     }
 
@@ -109,10 +117,28 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
+     * @notice Set operator
+     * @dev callable by Owner of the contract
+     * @param _operator: new operator address
+     */
+    function setOperator(address _operator) external onlyOwner {
+        require(_operator != address(0), "Cannot be zero address");
+        operator = _operator;
+
+        emit NewOperator(_operator);
+    }
+    
+    /**
+    * @notice Add funds
+    */
+    receive() external payable {
+    }
+
+    /**
     * @notice Set Claimabble Treasury Percent
     * @dev callable by Admin
     * @param _claimableTreasuryPercent: claimable percent
-     */
+    */
     function setClaimableTreasuryPercent(uint256 _claimableTreasuryPercent)  external onlyAdmin {
         require(_claimableTreasuryPercent > 0, "Amount cannot be zero or less");
         claimableTreasuryPercent = _claimableTreasuryPercent;
@@ -131,13 +157,5 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
         require(success, "TransferHelper: TRANSFER_FAILED");
 
         emit TreasuryClaim(admin, claimableTreasuryAmount);
-    }
-
-    /**
-    * @notice fetch admin address
-    * @return admin address 
-    */
-    function getAdmin() external view returns(address) {
-        return admin;
     }
 }
