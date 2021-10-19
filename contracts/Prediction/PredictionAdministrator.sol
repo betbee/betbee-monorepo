@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
  */
 contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
 
-    address public admin;
+    address private admin;
     address public operator;
     uint256 public treasuryFee;
     uint256 public constant MAX_TREASURY_FEE = 3; // 3%
@@ -62,22 +62,6 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
             size := extcodesize(account)
         }
         return size > 0;
-    }
-
-    /**
-     * @notice called by the admin to pause, triggers stopped state
-     * @dev Callable by admin
-     */
-    function pause() external whenNotPaused onlyAdmin {
-        _pause();
-    }
-
-    /**
-     * @notice called by the admin to unpause, triggers started state
-     * @dev Callable by admin
-     */
-    function unPause() external whenPaused onlyAdmin {
-        _unpause();
     }
 
     /**
@@ -157,5 +141,13 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
         require(success, "TransferHelper: TRANSFER_FAILED");
 
         emit TreasuryClaim(admin, claimableTreasuryAmount);
+    }
+
+    /**
+    * @notice get admin address
+    * @return admin address
+    */
+    function getAdmin() public view returns(address) {
+        return admin;
     }
 }
