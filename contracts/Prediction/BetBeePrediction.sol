@@ -10,10 +10,10 @@ import "./PriceManager.sol";
  */
 contract BetBeePrediction is PredictionAdministrator, PriceManager {
 
-    address public oracleAddress;
     uint256 public currentRoundId;
     uint256 public roundTime = 300; //5 mintues of round
     uint256 public genesisStartTimestamp;
+    //string public assetPair;
 
     bool public genesisStartOnce = false;
     bool public genesisCreateOnce = false;
@@ -46,14 +46,14 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
     mapping(address => uint256[]) public userRounds;
     mapping(uint256 => address[]) public usersInRounds;
 
-    event NewOracle(address oracleAddress);
     event Paused(uint256 currentRoundId);
     event UnPaused(uint256 currentRoundId);
 
     event CreateRound(uint256 indexed roundId);
     event StartRound(uint256 indexed roundId);
     event EndRound(uint256 indexed roundId);
-    event DisperseRound(uint256 indexed roundId, address indexed recipient, uint256 amountDispersed, uint256 timestamp);
+    event DisperseUser(uint256 indexed roundId, address indexed recipient, uint256 amountDispersed, uint256 timestamp);
+    event Disperse(uint256 indexed roundId);
     event BetBull(address indexed sender, uint256 indexed roundId, uint256 amount);
     event BetBear(address indexed sender, uint256 indexed roundId, uint256 amount);
     event RewardsCalculated(uint256 indexed roundId, uint256 rewardBaseCalAmount, uint256 rewardAmount, uint256 treasuryAmount);
@@ -63,12 +63,11 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
      * @notice Constructor
      * @param _adminAddress: admin address
      * @param _minBetAmount: minimum bet amounts (in wei)
-     * @param _treasuryFee: treasury fee (1000 = 10%)
-     * @param _oracleAddress: oracle address
+     * @param _treasuryFee: treasury fee 3 (3%)
      * @param _assetPair: asset pair
      */
     constructor(address _adminAddress, uint256 _minBetAmount, uint256 _treasuryFee, address _oracleAddress, string memory _assetPair) 
-    PredictionAdministrator(_adminAddress, _minBetAmount, _treasuryFee)
+    PredictionAdministrator(_adminAddress, _minBetAmount, _treasuryFee) 
     PriceManager(_oracleAddress, _assetPair) {
     }
 
@@ -92,18 +91,6 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
         _unpause();
 
         emit Paused(currentRoundId);
-    }
-
-    /**
-    * @notice Set oracle address
-    * @dev callable by admin
-    * @param _oracleAddress: new oracle address
-    */
-    function setOracleAddress(address _oracleAddress) external onlyAdmin {
-        require(_oracleAddress != address(0), "Invalid Oracle address");
-        oracleAddress = _oracleAddress;
-
-        emit NewOracle(_oracleAddress);
     }
 
     /**
@@ -225,34 +212,33 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
         round.roundState = RoundState.DISPERSED;
 
         //bull disperse
-        if(round.rewardBaseCalAmount == round.bullAmount) {
+        if(round.rewardBaseCalAmount == round.bullAmount && round.rewardBaseCalAmount > 0) {
             for (uint256 i =0; i < usersInRound.length; i++) {
                 if(ledger[roundId][usersInRound[i]].bullAmount > 0) {
                     reward = (ledger[roundId][usersInRound[i]].bullAmount * round.rewardAmount) / round.rewardBaseCalAmount;
                     ledger[roundId][usersInRound[i]].amountDispersed = reward;
                     _safeTransfer(usersInRound[i], reward);
 
-                    emit DisperseRound(roundId, usersInRound[i], reward, block.timestamp);
+                    emit DisperseUser(roundId, usersInRound[i], reward, block.timestamp);
                 }
             }
         }
 
         //bear disperse
-        else if(round.rewardBaseCalAmount == round.bearAmount) {
+        else if(round.rewardBaseCalAmount == round.bearAmount && round.rewardBaseCalAmount > 0) {
             for (uint256 i =0; i < usersInRound.length; i++) {
                 if(ledger[roundId][usersInRound[i]].bearAmount > 0) {
                     reward = (ledger[roundId][usersInRound[i]].bearAmount * round.rewardAmount) / round.rewardBaseCalAmount;
                     ledger[roundId][usersInRound[i]].amountDispersed = reward;
                     _safeTransfer(usersInRound[i], reward);
 
-                    emit DisperseRound(roundId, usersInRound[i], reward, block.timestamp);
+                    emit DisperseUser(roundId, usersInRound[i], reward, block.timestamp);
                 }
             }
         }
 
         //refund if tied round
-        else {
-            require(_refundable(roundId), "The round is not refundable");
+        else if(_refundable(roundId)) {
             uint256 userTotalBetAmount = 0;
             uint256 userTotalRefund = 0;
             for (uint256 i =0; i < usersInRound.length; i++) {
@@ -267,6 +253,13 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
                 }
             }
         }
+
+        //house wins
+        else {
+            treasuryAmount += round.rewardAmount;
+        }
+
+        emit Disperse(roundId);
     }
 
     /**
@@ -342,7 +335,7 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
     function genesisStartRound() external whenNotPaused onlyOperator notContract {
         require(genesisCreateOnce, "Can only run after genesisCreateRound is triggered");
         require(!genesisStartOnce, "Can only run genesisStartRound once");
-        int256 price = _getPriceByTimestamp(genesisStartTimestamp);
+        (,int256 price) = _getLatestPrice();
         _startRound(currentRoundId, price);
 
         //create next 3 rounds to be able to bet by users
@@ -361,8 +354,10 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
         require(genesisCreateOnce && genesisStartOnce, "Can only run after genesisStartRound and genesisLockRound is triggered");
 
         // currentRoundId refers to current round n
-        // fetch price to end current round and start new round
-        int256 price = _getPriceByTimestamp(rounds[currentRoundId].endTimestamp);
+        //get price
+        (uint256 currentOracleRoundId,int256 price) = _getLatestPrice();
+
+        oracleLatestRoundId = uint256(currentOracleRoundId);
 
         // Start next round
         _startRound(currentRoundId+1, price);
