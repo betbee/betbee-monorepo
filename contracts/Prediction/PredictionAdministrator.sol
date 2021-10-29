@@ -14,7 +14,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     address private admin;
     address public operator;
     uint256 public treasuryFee;
-    uint256 public constant MAX_TREASURY_FEE = 3; // 3%
+    uint256 public constant MAX_TREASURY_FEE = 5; // 5%
     uint256 public minBetAmount; // minimum betting amount (denominated in wei)
     uint256 public treasuryAmount; // funds in treasury collected from fee
     uint256 public claimableTreasuryPercent = 80; //80%
@@ -28,7 +28,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
 
     constructor(address _adminAddress, uint256 _minBetAmount, uint256 _treasuryFee) {
         require(_minBetAmount > 0, "Invalid Min bet amount");
-        require(_treasuryFee < MAX_TREASURY_FEE, "Treasury fee is too high");
+        require(_treasuryFee <= MAX_TREASURY_FEE, "Treasury fee is too high");
         require(_adminAddress != address(0), "Invalid admin address");
         admin = _adminAddress;
         operator = _adminAddress;
