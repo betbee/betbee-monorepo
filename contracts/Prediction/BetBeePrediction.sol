@@ -357,7 +357,7 @@ contract BetBeePrediction is PredictionAdministrator, PriceManager {
         //get price
         (uint256 currentOracleRoundId,int256 price) = _getLatestPrice();
 
-        oracleLatestRoundId = uint256(currentOracleRoundId);
+        PriceManager.oracleLatestRoundId = uint256(currentOracleRoundId);
 
         // Start next round
         _startRound(currentRoundId+1, price);

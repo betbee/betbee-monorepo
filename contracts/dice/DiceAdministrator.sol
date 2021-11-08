@@ -15,18 +15,20 @@ contract DiceAdministrator is Ownable, Pausable, ReentrancyGuard {
     uint256 public treasuryFee;
     uint256 public constant MAX_TREASURY_FEE = 3; // 3%
     uint256 public minBetAmount; // minimum betting amount (denominated in wei)
+    uint256 public minVRFBetAmount; // minimum betting amount when VRF selected(denominated in wei)
     uint256 public maxBetAmount; // maximum betting amount (denominated in wei)
     uint256 public treasuryAmount; // funds in treasury collected from fee
     uint256 public claimableTreasuryPercent = 80; //80%
 
     event NewMinBetAmount(uint256 minBetAmount);
+    event NewMinVRFBetAmount(uint256 minBetAmount);
     event NewMaxBetAmount(uint256 minBetAmount);
     event NewTreasuryFee(uint256 treasuryFee);
     event NewAdmin(address indexed admin);
     event NewClaimableTreasuryPercent(uint256 claimableTreasuryPercent);
     event TreasuryClaim(address indexed admin, uint256 amount);
 
-    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _maxBetAmount, uint256 _treasuryFee) {
+    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _maxBetAmount, uint256 _minVRFBetAmount, uint256 _treasuryFee) {
         require(_minBetAmount > 0, "Invalid Min bet amount");
         require(_treasuryFee < MAX_TREASURY_FEE, "Treasury fee is too high");
         require(_adminAddress != address(0), "Invalid admin address");
@@ -34,6 +36,7 @@ contract DiceAdministrator is Ownable, Pausable, ReentrancyGuard {
         admin = _adminAddress;
         minBetAmount = _minBetAmount;
         maxBetAmount = _maxBetAmount;
+        minVRFBetAmount = _minVRFBetAmount;
         treasuryFee = _treasuryFee;
     }
 
@@ -58,6 +61,18 @@ contract DiceAdministrator is Ownable, Pausable, ReentrancyGuard {
             size := extcodesize(account)
         }
         return size > 0;
+    }
+
+    /**
+     * @notice Set minBetAmount
+     * @dev Callable by admin
+     * @param _minVRFBetAmount: minimum bet amount to be set
+     */
+    function setMinVRFBetAmount(uint256 _minVRFBetAmount) external whenPaused onlyAdmin {
+        require(_minVRFBetAmount != 0, "Must be superior to 0");
+        minVRFBetAmount = _minVRFBetAmount;
+ 
+        emit NewMinVRFBetAmount(_minVRFBetAmount);
     }
 
     /**

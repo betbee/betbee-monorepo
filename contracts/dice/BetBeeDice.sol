@@ -10,23 +10,26 @@ import "./DiceAdministrator.sol";
 contract BetBeeDice is DiceAdministrator {
 
     enum BetType {UNKNOWN, TWOTOSIX, SEVEN, EIGHTTOTWELVE}
+    enum BetStatus {UNKNOWN, ROLLED, DISPERSED}
+    uint256 currentBetId=0;
 
     struct BetInfo {
+        uint256 betId;
+        address user;
         uint256 betAmount;
         BetType betType;
         BetType winType;
-        uint256 amountDispersed;
-        bool dispersed;
+        uint256 disperesedAmount;
+        BetStatus status;
     }
 
-    mapping(address => BetInfo) public ledger;
+    mapping(uint256 => BetInfo) public bets;
+    mapping(address => uint256[]) public userBets;
 
     event Paused(uint256 timestamp);
     event UnPaused(uint256 timestamp);
 
-    event Bet2To6(address indexed sender, BetType betType, uint256 _amount);
-    event Bet8To12(address indexed sender, BetType betType, uint256 _amount);
-    event Bet7(address indexed sender, BetType betType, uint256 _amount);
+    event Bet(address indexed sender, BetType betType, uint256 _amount);
     event DiceRolled(address indexed sender, BetType userBetType, BetType winType);
     event Disperesed(address indexed sender, uint256 amount);
 
@@ -35,10 +38,11 @@ contract BetBeeDice is DiceAdministrator {
      * @param _adminAddress: admin address
      * @param _minBetAmount: minimum bet amounts (in wei)
      * @param _maxBetAmount: maximum bet amounts (in wei)
+     * @param _minVRFBetAmount: minimum bet VRF amounts (in wei)
      * @param _treasuryFee: treasury fee 3 (3%)
      */
-    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _maxBetAmount, uint256 _treasuryFee) 
-    DiceAdministrator(_adminAddress, _minBetAmount, _maxBetAmount, _treasuryFee) {
+    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _maxBetAmount, uint256 _minVRFBetAmount, uint256 _treasuryFee) 
+    DiceAdministrator(_adminAddress, _minBetAmount, _maxBetAmount, _minVRFBetAmount, _treasuryFee) {
 
     }
 
@@ -72,94 +76,97 @@ contract BetBeeDice is DiceAdministrator {
         require(success, "TransferHelper: TRANSFER_FAILED");
     }
 
-    function _getRandomNumber() internal pure returns(uint8) {
+    function _getRandomNumber(bool useVRF) internal pure returns(uint8) {
         uint8 random;
         return random;
     }
 
-    function _disperseUser(address user) internal {
-        require(ledger[user].betType == ledger[user].winType, "No win");
-        require(!ledger[user].dispersed, "Already dispersed");
+    function _disperseUser(uint256 betId) internal {
+        require(bets[betId].status == BetStatus.ROLLED, "yet to roll");
+        require(bets[betId].status != BetStatus.DISPERSED, "Already dispersed");
+        require(bets[betId].betType == bets[betId].winType, "No win");
         uint256 reward = 0;
         uint256 finalAmount=0;
-        uint256 userTreasuryAmount = (ledger[user].betAmount * treasuryFee)/100;
+        uint256 userTreasuryAmount = (bets[betId].betAmount * treasuryFee)/100;
         treasuryAmount += userTreasuryAmount;
-        uint256 amount = ledger[user].betAmount - userTreasuryAmount;
+        uint256 amount = bets[betId].betAmount - userTreasuryAmount;
         
         //1.5x for 2TO6 and 8TO12 win
-        if(ledger[user].winType == BetType.TWOTOSIX || ledger[user].winType == BetType.EIGHTTOTWELVE) {
+        if(bets[betId].winType == BetType.TWOTOSIX || bets[betId].winType == BetType.EIGHTTOTWELVE) {
             reward = 150;
         }
         //2x for 7 wins
-        else if(ledger[user].winType == BetType.SEVEN) {
+        else if(bets[betId].winType == BetType.SEVEN) {
             reward = 200;
         }
 
         finalAmount = (amount * reward)/100;
-        ledger[user].amountDispersed = finalAmount;
-        ledger[user].dispersed = true;
-        _safeTransfer(user, finalAmount);
+        bets[betId].disperesedAmount = finalAmount;
+        bets[betId].status = BetStatus.DISPERSED;
+        _safeTransfer(bets[betId].user, finalAmount);
 
-        emit Disperesed(user, finalAmount);
+        emit Disperesed(bets[betId].user, finalAmount);
     }
 
-    function bet2To6() external payable whenNotPaused nonReentrant notContract {
-        require(msg.value >= minBetAmount, "Bet amount must be greater than minBetAmount");
+    function betAndRoll(uint256 betNumber, bool useVRF) external payable whenNotPaused nonReentrant notContract {
+        if(useVRF) {
+            require(msg.value >= minVRFBetAmount, "Bet amount must be greater than minVRFBetAmount");
+        }
+        else {
+            require(msg.value >= minBetAmount, "Bet amount must be greater than minBetAmount");
+        }
         require(msg.value <= maxBetAmount, "Bet amount must be lesser than maxBetAmount");
+        // 2 means 2 to 6, 7 means 7, 8 means 8 to 12
+        require(betNumber == 2 || betNumber == 7 || betNumber == 8, "Invalid bet type");
 
-        ledger[msg.sender].betAmount = msg.value;
-        ledger[msg.sender].betType = BetType.TWOTOSIX;
-        ledger[msg.sender].dispersed = false;
+        BetInfo storage bet = bets[currentBetId];
 
-        emit Bet2To6(msg.sender, BetType.TWOTOSIX, msg.value);
+        bet.betId = currentBetId;
+        bet.user = msg.sender;
+        bet.betAmount = msg.value;
+        userBets[msg.sender].push(currentBetId);
+
+        if(betNumber == 2) {
+            bet.betType = BetType.TWOTOSIX;
+        }
+        else if(betNumber == 7) {
+            bet.betType = BetType.SEVEN;
+        } 
+        else {
+            bet.betType = BetType.EIGHTTOTWELVE;
+        }
+
+        emit Bet(msg.sender, bet.betType, msg.value);
+
+        //roll the dice
+        _rollDice(currentBetId, useVRF);
+
+        //disperse user
+        _disperseUser(currentBetId);
+
+        //increase currentBetId
+        currentBetId = currentBetId + 1;
     }
 
-    function bet8To12() external payable whenNotPaused nonReentrant notContract {
-        require(msg.value >= minBetAmount, "Bet amount must be greater than minBetAmount");
-        require(msg.value <= maxBetAmount, "Bet amount must be lesser than maxBetAmount");
-
-        ledger[msg.sender].betAmount = msg.value;
-        ledger[msg.sender].betType = BetType.EIGHTTOTWELVE;
-        ledger[msg.sender].dispersed = false;
-
-        emit Bet8To12(msg.sender, BetType.EIGHTTOTWELVE, msg.value);
-    }
-
-    function bet7() external payable whenNotPaused nonReentrant notContract {
-        require(msg.value >= minBetAmount, "Bet amount must be greater than minBetAmount");
-        require(msg.value <= maxBetAmount, "Bet amount must be lesser than maxBetAmount");
-
-        ledger[msg.sender].betAmount = msg.value;
-        ledger[msg.sender].betType = BetType.SEVEN;
-        ledger[msg.sender].dispersed = false;
-
-        emit Bet2To6(msg.sender, BetType.SEVEN, msg.value);
-    }
-
-    function rollDice() external whenNotPaused notContract {
-        require(ledger[msg.sender].betAmount > 0, "Bet first, roll the dice next");
-        require(!ledger[msg.sender].dispersed, "Already ended");
+    function _rollDice(uint256 betId, bool useVRF) internal {
+        require(bets[betId].betAmount > 0, "Bet first, roll the dice next");
+        require(bets[betId].status == BetStatus.UNKNOWN, "Already rolled");
         
-        uint256 random = _getRandomNumber();
+        uint256 random = _getRandomNumber(useVRF);
+        require(random >= 2 && random <= 12, "Incorrect random number");
+
         if(random >= 2 && random <= 6) {
-            ledger[msg.sender].winType = BetType.TWOTOSIX;
+            bets[betId].winType = BetType.TWOTOSIX;
         }
         else if(random >= 8 && random <= 12) {
-            ledger[msg.sender].winType = BetType.EIGHTTOTWELVE;
+            bets[betId].winType = BetType.EIGHTTOTWELVE;
         }
-        else if(random == 7) {
-            ledger[msg.sender].winType = BetType.SEVEN;
-        }
-
-        //user wins
-        if(ledger[msg.sender].betType == ledger[msg.sender].winType) {
-            _disperseUser(msg.sender);
-        }
-        //house wins
         else {
-            treasuryAmount += ledger[msg.sender].betAmount;
+            bets[betId].winType = BetType.SEVEN;
         }
 
-        emit DiceRolled(msg.sender, ledger[msg.sender].betType, ledger[msg.sender].winType);
+        bets[betId].status = BetStatus.ROLLED;
+
+        emit DiceRolled(bets[betId].user, bets[betId].betType, bets[betId].winType);
     }
 }
