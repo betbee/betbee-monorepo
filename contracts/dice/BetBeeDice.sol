@@ -11,7 +11,7 @@ contract BetBeeDice is DiceAdministrator {
 
     enum BetType {UNKNOWN, TWOTOSIX, SEVEN, EIGHTTOTWELVE}
     enum BetStatus {UNKNOWN, ROLLED, DISPERSED}
-    uint256 currentBetId=0;
+    uint256 public currentBetId=0;
 
     struct BetInfo {
         uint256 betId;
@@ -91,13 +91,13 @@ contract BetBeeDice is DiceAdministrator {
         treasuryAmount += userTreasuryAmount;
         uint256 amount = bets[betId].betAmount - userTreasuryAmount;
         
-        //1.5x for 2TO6 and 8TO12 win
+        //2x for 2TO6 and 8TO12 win
         if(bets[betId].winType == BetType.TWOTOSIX || bets[betId].winType == BetType.EIGHTTOTWELVE) {
-            reward = 150;
-        }
-        //2x for 7 wins
-        else if(bets[betId].winType == BetType.SEVEN) {
             reward = 200;
+        }
+        //4x for 7 wins
+        else if(bets[betId].winType == BetType.SEVEN) {
+            reward = 400;
         }
 
         finalAmount = (amount * reward)/100;
@@ -108,7 +108,7 @@ contract BetBeeDice is DiceAdministrator {
         emit Disperesed(bets[betId].user, finalAmount);
     }
 
-    function betAndRoll(uint256 betNumber, bool useVRF) external payable whenNotPaused nonReentrant notContract {
+    function betAndRoll(uint256 position, bool useVRF) external payable whenNotPaused nonReentrant notContract {
         if(useVRF) {
             require(msg.value >= minVRFBetAmount, "Bet amount must be greater than minVRFBetAmount");
         }
@@ -117,7 +117,7 @@ contract BetBeeDice is DiceAdministrator {
         }
         require(msg.value <= maxBetAmount, "Bet amount must be lesser than maxBetAmount");
         // 2 means 2 to 6, 7 means 7, 8 means 8 to 12
-        require(betNumber == 2 || betNumber == 7 || betNumber == 8, "Invalid bet type");
+        require(position == 2 || position == 7 || position == 8, "Invalid bet type");
 
         BetInfo storage bet = bets[currentBetId];
 
@@ -126,10 +126,10 @@ contract BetBeeDice is DiceAdministrator {
         bet.betAmount = msg.value;
         userBets[msg.sender].push(currentBetId);
 
-        if(betNumber == 2) {
+        if(position == 2) {
             bet.betType = BetType.TWOTOSIX;
         }
-        else if(betNumber == 7) {
+        else if(position == 7) {
             bet.betType = BetType.SEVEN;
         } 
         else {

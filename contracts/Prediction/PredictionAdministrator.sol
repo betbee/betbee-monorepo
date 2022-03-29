@@ -5,17 +5,20 @@ pragma solidity ^0.8.7;
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title PredictionAdministrator
  */
 contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
 
-    address private admin;
+    using SafeERC20 for IERC20;
+
+    address public admin;
     address public operator;
-    uint256 public treasuryFee;
+    uint256 public treasuryFee = 3; //default 3%
     uint256 public constant MAX_TREASURY_FEE = 5; // 5%
-    uint256 public minBetAmount; // minimum betting amount (denominated in wei)
+    uint256 public minBetAmount = 10000000000000000; // minimum betting default amount 0.01
     uint256 public treasuryAmount; // funds in treasury collected from fee
     uint256 public claimableTreasuryPercent = 80; //80%
 
@@ -26,14 +29,9 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     event NewClaimableTreasuryPercent(uint256 claimableTreasuryPercent);
     event TreasuryClaim(address indexed admin, uint256 amount);
 
-    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _treasuryFee) {
-        require(_minBetAmount > 0, "Invalid Min bet amount");
-        require(_treasuryFee <= MAX_TREASURY_FEE, "Treasury fee is too high");
-        require(_adminAddress != address(0), "Invalid admin address");
-        admin = _adminAddress;
-        operator = _adminAddress;
-        minBetAmount = _minBetAmount;
-        treasuryFee = _treasuryFee;
+    constructor() {
+        admin = owner();
+        operator = admin;
     }
 
     modifier onlyAdmin() {
@@ -136,7 +134,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
      */
     function claimTreasury() external nonReentrant onlyAdmin notContract {
         uint256 claimableTreasuryAmount = ((treasuryAmount * claimableTreasuryPercent) / 100);
-        treasuryAmount -= claimableTreasuryAmount;
+        treasuryAmount = treasuryAmount - claimableTreasuryAmount;
         (bool success, ) = admin.call{value: claimableTreasuryAmount}("");
         require(success, "TransferHelper: TRANSFER_FAILED");
 
@@ -144,10 +142,13 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-    * @notice get admin address
-    * @return admin address
-    */
-    function getAdmin() public view returns(address) {
-        return admin;
+     * @notice Recover tokens sent by mistake
+     * @param _token: token address
+     * @param _amount: token amount
+     * @dev Callable by owner
+     */
+    function recoverToken(address _token, uint256 _amount) external nonReentrant onlyAdmin notContract {
+        IERC20(_token).safeTransfer(address(msg.sender), _amount);
     }
+
 }
