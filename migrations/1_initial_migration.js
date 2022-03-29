@@ -1,5 +1,5 @@
-const Prediction = artifacts.require("BetBeePrediction");
+const BetBeePrediction = artifacts.require("BetBeePrediction");
 
 module.exports = function (deployer) {
-  deployer.deploy(Prediction);
+  deployer.deploy(BetBeePrediction);
 };

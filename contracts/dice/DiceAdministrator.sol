@@ -5,42 +5,43 @@ pragma solidity ^0.8.7;
 import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
- * @title PredictionAdministrator
+ * @title DiceAdministrator
  */
-contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
+contract DiceAdministrator is Ownable, Pausable, ReentrancyGuard {
 
-    using SafeERC20 for IERC20;
-
-    address public admin;
-    address public operator;
-    uint256 public treasuryFee = 3; //default 3%
-    uint256 public constant MAX_TREASURY_FEE = 5; // 5%
-    uint256 public minBetAmount = 10000000000000000; // minimum betting default amount 0.01
+    address private admin;
+    uint256 public treasuryFee;
+    uint256 public constant MAX_TREASURY_FEE = 3; // 3%
+    uint256 public minBetAmount; // minimum betting amount (denominated in wei)
+    uint256 public minVRFBetAmount; // minimum betting amount when VRF selected(denominated in wei)
+    uint256 public maxBetAmount; // maximum betting amount (denominated in wei)
     uint256 public treasuryAmount; // funds in treasury collected from fee
     uint256 public claimableTreasuryPercent = 80; //80%
 
     event NewMinBetAmount(uint256 minBetAmount);
+    event NewMinVRFBetAmount(uint256 minBetAmount);
+    event NewMaxBetAmount(uint256 minBetAmount);
     event NewTreasuryFee(uint256 treasuryFee);
     event NewAdmin(address indexed admin);
-    event NewOperator(address indexed operator);
     event NewClaimableTreasuryPercent(uint256 claimableTreasuryPercent);
     event TreasuryClaim(address indexed admin, uint256 amount);
 
-    constructor() {
-        admin = owner();
-        operator = admin;
+    constructor(address _adminAddress, uint256 _minBetAmount, uint256 _maxBetAmount, uint256 _minVRFBetAmount, uint256 _treasuryFee) {
+        require(_minBetAmount > 0, "Invalid Min bet amount");
+        require(_treasuryFee < MAX_TREASURY_FEE, "Treasury fee is too high");
+        require(_adminAddress != address(0), "Invalid admin address");
+        require(_maxBetAmount > _minBetAmount, "max bet amount less than min amount");
+        admin = _adminAddress;
+        minBetAmount = _minBetAmount;
+        maxBetAmount = _maxBetAmount;
+        minVRFBetAmount = _minVRFBetAmount;
+        treasuryFee = _treasuryFee;
     }
 
     modifier onlyAdmin() {
         require(msg.sender == admin, "Not admin");
-        _;
-    }
-
-    modifier onlyOperator() {
-        require(msg.sender == operator, "Not operator");
         _;
     }
 
@@ -65,13 +66,37 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     /**
      * @notice Set minBetAmount
      * @dev Callable by admin
+     * @param _minVRFBetAmount: minimum bet amount to be set
+     */
+    function setMinVRFBetAmount(uint256 _minVRFBetAmount) external whenPaused onlyAdmin {
+        require(_minVRFBetAmount != 0, "Must be superior to 0");
+        minVRFBetAmount = _minVRFBetAmount;
+ 
+        emit NewMinVRFBetAmount(_minVRFBetAmount);
+    }
+
+    /**
+     * @notice Set minBetAmount
+     * @dev Callable by admin
      * @param _minBetAmount: minimum bet amount to be set
      */
     function setMinBetAmount(uint256 _minBetAmount) external whenPaused onlyAdmin {
         require(_minBetAmount != 0, "Must be superior to 0");
         minBetAmount = _minBetAmount;
-
+ 
         emit NewMinBetAmount(_minBetAmount);
+    }
+
+    /**
+     * @notice Set maxBetAmount
+     * @dev Callable by admin
+     * @param _maxBetAmount: maximum bet amount to be set
+     */
+    function setMaxBetAmount(uint256 _maxBetAmount) external whenPaused onlyAdmin {
+        require(_maxBetAmount > minBetAmount, "Must be superior to 0");
+        maxBetAmount = _maxBetAmount;
+
+        emit NewMaxBetAmount(_maxBetAmount);
     }
 
     /**
@@ -96,18 +121,6 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
         admin = _admin;
 
         emit NewAdmin(_admin);
-    }
-
-    /**
-     * @notice Set operator
-     * @dev callable by Owner of the contract
-     * @param _operator: new operator address
-     */
-    function setOperator(address _operator) external onlyOwner {
-        require(_operator != address(0), "Cannot be zero address");
-        operator = _operator;
-
-        emit NewOperator(_operator);
     }
     
     /**
@@ -134,7 +147,7 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
      */
     function claimTreasury() external nonReentrant onlyAdmin notContract {
         uint256 claimableTreasuryAmount = ((treasuryAmount * claimableTreasuryPercent) / 100);
-        treasuryAmount = treasuryAmount - claimableTreasuryAmount;
+        treasuryAmount -= claimableTreasuryAmount;
         (bool success, ) = admin.call{value: claimableTreasuryAmount}("");
         require(success, "TransferHelper: TRANSFER_FAILED");
 
@@ -142,13 +155,10 @@ contract PredictionAdministrator is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice Recover tokens sent by mistake
-     * @param _token: token address
-     * @param _amount: token amount
-     * @dev Callable by owner
-     */
-    function recoverToken(address _token, uint256 _amount) external nonReentrant onlyAdmin notContract {
-        IERC20(_token).safeTransfer(address(msg.sender), _amount);
+    * @notice get admin address
+    * @return admin address
+    */
+    function getAdmin() public view returns(address) {
+        return admin;
     }
-
 }
