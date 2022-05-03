@@ -51,7 +51,7 @@ contract BetBeePrediction is PredictionAdministrator {
     event StartRound(uint256 indexed roundId, int256 startPrice);
     event EndRound(uint256 indexed roundId, int256 endPrice);
     event CancelRound(uint256 indexed roundId);
-    event DisburseUser(uint256 indexed roundId, address indexed recipient, uint256 amountDDisbursed, uint256 timestamp);
+    event DisburseUser(uint256 indexed roundId, address indexed recipient, uint256 amountDisbursed, uint256 timestamp);
     event Disburse(uint256 indexed roundId);
     event BetBull(address indexed sender, uint256 indexed roundId, uint256 amount);
     event BetBear(address indexed sender, uint256 indexed roundId, uint256 amount);
