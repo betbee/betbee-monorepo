@@ -44,8 +44,8 @@ contract BetBeePrediction is PredictionAdministrator {
     mapping(address => uint256[]) public userRounds;
     mapping(uint256 => address[]) public usersInRounds;
 
-    event Paused(uint256 currentRoundId);
-    event UnPaused(uint256 currentRoundId);
+    event BetbeePaused(uint256 currentRoundId);
+    event BetbeeUnPaused(uint256 currentRoundId);
 
     event CreateRound(uint256 indexed roundId);
     event StartRound(uint256 indexed roundId, int256 startPrice);
@@ -63,21 +63,23 @@ contract BetBeePrediction is PredictionAdministrator {
      * @dev Callable by admin
      */
     function pause() external whenNotPaused onlyAdmin {
+        if (rounds[currentRoundId].roundState != RoundState.CANCELLED) {
+            cancelAndRefundRound(currentRoundId);
+        }
+
         _pause();
 
-        emit Paused(currentRoundId);
+        emit BetbeePaused(currentRoundId);
     }
 
     /**
-     * @notice Unpuase the contract
+     * @notice Unpause the contract
      * @dev Callable by admin
      */
     function unPause() external whenPaused onlyAdmin {
-        genesisCreateOnce = false;
-        genesisStartOnce = false;
         _unpause();
 
-        emit Paused(currentRoundId);
+        emit BetbeeUnPaused(currentRoundId);
     } 
 
     /**
@@ -126,8 +128,8 @@ contract BetBeePrediction is PredictionAdministrator {
     * @notice Cancel and Refund Round
     * @param _roundId: round Id
     */
-    function cancelAndRefundRound(uint256 _roundId) external onlyOperator notContract {
-        require(rounds[_roundId].roundState <= RoundState.STARTED, "Round is ended/cancelled already");
+    function cancelAndRefundRound(uint256 _roundId) public onlyOperator notContract {
+        require(rounds[_roundId].roundState == RoundState.STARTED, "Round is ended/cancelled already");
         rounds[_roundId].startPrice = 0;
         rounds[_roundId].endPrice = 0;
         rounds[_roundId].rewardBaseCalAmount = 0;
@@ -365,12 +367,8 @@ contract BetBeePrediction is PredictionAdministrator {
     function executeRound(int256 _price) external whenNotPaused onlyOperator notContract {
         require(genesisCreateOnce && genesisStartOnce, "Can only run after genesisStartRound and genesisLockRound is triggered");
 
-        // currentRoundId refers to current round n
-
         // Start next round
-        if(rounds[currentRoundId+1].roundState != RoundState.CANCELLED) {
-            _startRound(currentRoundId+1, _price);
-        }
+        _startRound(currentRoundId+1, _price);
 
         // End and Disburse current round
         if(rounds[currentRoundId].roundState != RoundState.CANCELLED) {

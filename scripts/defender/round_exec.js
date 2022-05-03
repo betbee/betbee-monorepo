@@ -41,7 +41,7 @@ exports.handler = async function(event) {
   const contract = new ethers.Contract(address, abi, signer);
   
   const currentRoundEndTimestamp = await contract.getCurrentRoundEndTimestamp();
-  if((currentRoundEndTimestamp) <= Date.now()){
+  if(currentRoundEndTimestamp <= Date.now()){
   	let price = await getPrice(currentRoundEndTimestamp);
   	const tx = await contract.executeRound(price);
   	console.log(`Round Execution Tx:  ${tx.hash} with Price: ${price}`);
